@@ -24,6 +24,16 @@
 #include "esp_err.h"
 #include "esp_system.h"
 
+typedef enum
+{
+    ARTNET_MODE_MASTER = 0,
+    ARTNET_MODE_MASTER_SELFSLAVE,
+    ARTNET_MODE_BRIDGE_OUTPUT,
+    ARTNET_MODE_SLAVE_MONITOR,
+    ARTNET_MODE_BRIDGE_INPUT,
+    ARTNET_MODE_DISABLED,
+
+} artnet_mode_t;
 
 esp_err_t ArtNetInitMaster();
 esp_err_t ArtNetInitSlave();
