@@ -21,7 +21,34 @@
 
 #ifndef COMPONENTS_ARTNET_ESP32_INCLUDE_ARTNET_ESP32_H_
 #define COMPONENTS_ARTNET_ESP32_INCLUDE_ARTNET_ESP32_H_
+#include "esp_err.h"
+#include "esp_system.h"
 
+
+esp_err_t ArtNetInitMaster();
+esp_err_t ArtNetInitSlave();
+
+// UDP specific
+#define ART_NET_PORT 6454
+// Opcodes
+#define ART_POLL 0x2000
+#define ART_DMX 0x5000
+#define ART_SYNC 0x5200
+// Buffers
+#define MAX_BUFFER_ARTNET 530
+// Packet
+#define ART_NET_ID "Art-Net"
+#define ART_DMX_START 18
+
+#define HOST_IP_ADDR "192.168.99.255"
+
+typedef struct
+{
+  int idx;
+  uint8_t artnetPacket[MAX_BUFFER_ARTNET];
+
+
+} art_net_t;
 
 
 #endif /* COMPONENTS_ARTNET_ESP32_INCLUDE_ARTNET_ESP32_H_ */
