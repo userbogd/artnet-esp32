@@ -32,62 +32,101 @@
 //#include "esp_netif.h"
 //#include "protocol_examples_common.h"
 
-#include "lwip/err.h"
-#include "lwip/sockets.h"
-#include "lwip/sys.h"
-#include <lwip/netdb.h>
-
 static const char *TAG = "art-net";
+static art_net_t ArtNetHandle;
+
+static uint16_t receive_handler(struct sockaddr_in *addr, uint8_t *artnetPacket, int len)
+{
+    //ESP_LOGI(TAG, "Packet length:%d from %s", len, adr);
+    //ESP_LOG_BUFFER_HEX(TAG, buf, 64);
+    if (len <= 0)
+        return 0;
+    // Check that packetID is "Art-Net" else ignore
+    if (memcmp(artnetPacket, ART_NET_ID, sizeof(ART_NET_ID)) != 0)
+    {
+        return 0;
+    }
+    uint16_t opcode = artnetPacket[8] | artnetPacket[9] << 8;
+    art_net_data_t data;
+
+    if (opcode == ART_DMX)
+    {
+        data.sequence = artnetPacket[12];
+        data.incomingUniverse = artnetPacket[14] | artnetPacket[15] << 8;
+        data.dmxDataLength = artnetPacket[17] | artnetPacket[16] << 8;
+
+        //Here pass incoming data into user registered callback
+        /*
+        if (artDmxCallback)
+            (*artDmxCallback)(incomingUniverse, dmxDataLength, sequence, artnetPacket + ART_DMX_START, remoteIP);
+        */
+        return ART_DMX;
+    }
+
+
+
+
+
+
+    return 0;
+}
 
 static void art_net_master_task(void *arg)
 {
-    int addr_family = 0;
-    int ip_protocol = 0;
+    art_net_t *art;
+    art = (art_net_t*) arg;
+    art->adr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
+    art->adr.sin_family = AF_INET;
+    art->adr.sin_port = htons(ART_NET_PORT);
 
     while (1)
     {
-
-        struct sockaddr_in dest_addr;
-        dest_addr.sin_addr.s_addr = inet_addr(HOST_IP_ADDR);
-        dest_addr.sin_family = AF_INET;
-        dest_addr.sin_port = htons(ART_NET_PORT);
-        addr_family = AF_INET;
-        ip_protocol = IPPROTO_IP;
-
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0)
+        art->sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+        if (art->sock < 0)
         {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
             break;
         }
 
-        // Set timeout
-
         int bcast = 1;
-        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof bcast);
+        setsockopt(art->sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof bcast);
         ESP_LOGI(TAG, "Socket created, sending to %s:%d", HOST_IP_ADDR, ART_NET_PORT);
 
         while (1)
         {
-
-            char pl[128];
-            static int counter = 0;
-            sprintf(pl, "Message %d\n", ++counter);
-            int err = sendto(sock, pl, strlen(pl), 0, (struct sockaddr*) &dest_addr, sizeof(dest_addr));
+            int err = sendto(art->sock, art->buf, strlen((char*) art->buf), 0, (struct sockaddr*) &art->adr,
+                             sizeof(art->adr));
             if (err < 0)
             {
                 ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
                 break;
             }
 
-            vTaskDelay(pdMS_TO_TICKS(100));
+            struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+            socklen_t socklen = sizeof(source_addr);
+            int len = recvfrom(art->sock, art->buf, sizeof(art->buf) - 1, 0, (struct sockaddr*) &source_addr, &socklen);
+
+            if (len < 0) // Error occurred during receiving
+            {
+                ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
+                break;
+            }
+
+            else  // Data received
+            {
+                art->buf[len] = 0; // Null-terminate whatever we received and treat like a string
+                ESP_LOGI(TAG, "Received %d bytes:", len);
+                ESP_LOGI(TAG, "%s", art->buf);
+            }
+
+            vTaskDelay(pdMS_TO_TICKS(1000));
         }
 
-        if (sock != -1)
+        if (art->sock != -1)
         {
             ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
+            shutdown(art->sock, 0);
+            close(art->sock);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
@@ -96,69 +135,50 @@ static void art_net_master_task(void *arg)
 
 static void art_net_slave_task(void *arg)
 {
-    char rx_buffer[128];
-    char addr_str[128];
-    int addr_family = AF_INET;
-    int ip_protocol = 0;
-    struct sockaddr_in dest_addr;
+    art_net_t *art;
+    art = (art_net_t*) arg;
+
+    art->adr.sin_addr.s_addr = htonl(INADDR_ANY);
+    art->adr.sin_family = AF_INET;
+    art->adr.sin_port = htons(ART_NET_PORT);
+    art->timeout.tv_sec = ART_NET_TIMEOUT;
+    art->timeout.tv_usec = 0;
 
     while (1)
     {
-        if (addr_family == AF_INET)
-        {
-            struct sockaddr_in *dest_addr_ip4 = (struct sockaddr_in*) &dest_addr;
-            dest_addr_ip4->sin_addr.s_addr = htonl(INADDR_ANY);
-            dest_addr_ip4->sin_family = AF_INET;
-            dest_addr_ip4->sin_port = htons(ART_NET_PORT);
-            ip_protocol = IPPROTO_IP;
-        }
-
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0)
+        art->sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_IP);
+        if (art->sock < 0)
         {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
             break;
         }
         ESP_LOGI(TAG, "Socket created");
 
-        int bcast = 1;
-        setsockopt(sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof bcast);
+        setsockopt(art->sock, SOL_SOCKET, SO_RCVTIMEO, &art->timeout, sizeof(art->timeout));
 
-        int err = bind(sock, (struct sockaddr*) &dest_addr, sizeof(dest_addr));
+        int err = bind(art->sock, (struct sockaddr*) &art->adr, sizeof(art->adr));
         if (err < 0)
         {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         }
         ESP_LOGI(TAG, "Socket bound, port %d", ART_NET_PORT);
 
-        struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
+        struct sockaddr_in source_addr; // Large enough for both IPv4 or IPv6
         socklen_t socklen = sizeof(source_addr);
 
         while (1)
         {
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr*) &source_addr,
+            int len = recvfrom(art->sock, art->buf, sizeof(art->buf) - 1, 0, (struct sockaddr*) &source_addr,
                                &socklen);
-
-            // Error occurred during receiving
-            if (len < 0)
+            if (len < 0)    // Error occurred during receiving
             {
                 ESP_LOGE(TAG, "recvfrom failed: errno %d", errno);
                 break;
             }
-            // Data received
-            else
+            else  //Data received
             {
-                // Get the sender's ip address as string
-                if (source_addr.ss_family == PF_INET)
-                {
-                    inet_ntoa_r(((struct sockaddr_in* )&source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
-                }
-
-                rx_buffer[len] = 0;
-                ESP_LOGI(TAG, "%s", rx_buffer);
-
-
-                int err = sendto(sock, rx_buffer, len, 0, (struct sockaddr*) &source_addr, sizeof(source_addr));
+                receive_handler((&source_addr), art->buf, len);
+                int err = sendto(art->sock, art->buf, len, 0, (struct sockaddr*) &source_addr, sizeof(source_addr));
                 if (err < 0)
                 {
                     ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
@@ -167,26 +187,24 @@ static void art_net_slave_task(void *arg)
             }
         }
 
-        if (sock != -1)
+        if (art->sock != -1)
         {
             ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
+            shutdown(art->sock, 0);
+            close(art->sock);
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
     }
     vTaskDelete(NULL);
 }
 
-esp_err_t ArtNetInitMaster()
+esp_err_t ArtNetInit(artnet_mode_t mode)
 {
-    xTaskCreate(art_net_master_task, "udp_client", 4096, NULL, 5, NULL);
-    return ESP_OK;
-}
-
-esp_err_t ArtNetInitSlave()
-{
-    xTaskCreate(art_net_slave_task, "udp_client", 4096, NULL, 5, NULL);
+    ArtNetHandle.mode = mode;
+    if (mode < ARTNET_MODE_SLAVE_MONITOR)
+        xTaskCreate(art_net_master_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
+    else if (mode < ARTNET_MODE_DISABLED)
+        xTaskCreate(art_net_slave_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
     return ESP_OK;
 }
 
