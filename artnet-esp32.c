@@ -25,20 +25,26 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
-#include "esp_system.h"
-//#include "esp_event.h"
-#include "esp_log.h"
-//#include "nvs_flash.h"
-//#include "esp_netif.h"
-//#include "protocol_examples_common.h"
+#include "esp_types.h"
 
-static const char *TAG = "art-net";
+static const char *TAG = "artnet-esp32";
 static art_net_t ArtNetHandle;
+
+void (*artDmxCallback)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data,  in_addr_t remoteIP);
+void (*artSyncCallback)(in_addr_t remoteIP);
+
+void setArtDmxCallback(void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data, in_addr_t remoteIP))
+{
+  artDmxCallback = fptr;
+}
+
+void setArtSyncCallback(void (*fptr)(in_addr_t remoteIP))
+{
+  artSyncCallback = fptr;
+}
 
 static uint16_t receive_handler(struct sockaddr_in *addr, uint8_t *artnetPacket, int len)
 {
-    //ESP_LOGI(TAG, "Packet length:%d from %s", len, adr);
-    //ESP_LOG_BUFFER_HEX(TAG, buf, 64);
     if (len <= 0)
         return 0;
     // Check that packetID is "Art-Net" else ignore
@@ -47,20 +53,19 @@ static uint16_t receive_handler(struct sockaddr_in *addr, uint8_t *artnetPacket,
         return 0;
     }
     uint16_t opcode = artnetPacket[8] | artnetPacket[9] << 8;
-    art_net_data_t data;
 
     if (opcode == ART_DMX)
     {
-        data.sequence = artnetPacket[12];
-        data.incomingUniverse = artnetPacket[14] | artnetPacket[15] << 8;
-        data.dmxDataLength = artnetPacket[17] | artnetPacket[16] << 8;
-
-        //Here pass incoming data into user registered callback
-        /*
+        uint8_t sequence = artnetPacket[12];
+        uint16_t incomingUniverse = artnetPacket[14] | artnetPacket[15] << 8;
+        uint16_t dmxDataLength = artnetPacket[17] | artnetPacket[16] << 8;
         if (artDmxCallback)
-            (*artDmxCallback)(incomingUniverse, dmxDataLength, sequence, artnetPacket + ART_DMX_START, remoteIP);
-        */
+            (*artDmxCallback)(incomingUniverse, dmxDataLength, sequence, artnetPacket + ART_DMX_START, addr->sin_addr.s_addr);
         return ART_DMX;
+    }
+    if (opcode == ART_POLL)
+    {
+
     }
 
 
@@ -198,7 +203,7 @@ static void art_net_slave_task(void *arg)
     vTaskDelete(NULL);
 }
 
-esp_err_t ArtNetInit(artnet_mode_t mode)
+esp_err_t artnet_init(artnet_mode_t mode)
 {
     ArtNetHandle.mode = mode;
     if (mode < ARTNET_MODE_SLAVE_MONITOR)

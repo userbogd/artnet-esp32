@@ -27,6 +27,8 @@
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
 #include <lwip/netdb.h>
+#include "esp_log.h"
+#include "esp_netif.h"
 
 typedef enum
 {
@@ -78,8 +80,6 @@ struct artnet_reply_s
     uint8_t filler[26];
 } __attribute__((packed));
 
-esp_err_t ArtNetInit(artnet_mode_t mode);
-
 // UDP specific
 #define ART_NET_PORT 6454
 #define ART_NET_TIMEOUT 10
@@ -115,5 +115,11 @@ typedef struct
     struct timeval timeout;
     TaskHandle_t task;
 } art_net_t;
+
+
+esp_err_t artnet_init(artnet_mode_t mode);
+void setArtDmxCallback(void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data, in_addr_t remoteIP));
+void setArtSyncCallback(void (*fptr)(in_addr_t remoteIP));
+
 
 #endif /* COMPONENTS_ARTNET_ESP32_INCLUDE_ARTNET_ESP32_H_ */
