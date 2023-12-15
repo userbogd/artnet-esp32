@@ -85,6 +85,7 @@ struct artnet_reply_s
 #define ART_NET_TIMEOUT 10
 // Opcodes
 #define ART_POLL    0x2000
+#define ART_POLL_REPLY 0x2100
 #define ART_DMX     0x5000
 #define ART_SYNC    0x5200
 
@@ -114,10 +115,11 @@ typedef struct
     struct sockaddr_in adr;
     struct timeval timeout;
     TaskHandle_t task;
+    uint32_t ownip;
 } art_net_t;
 
 
-esp_err_t artnet_init(artnet_mode_t mode);
+esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip);
 void setArtDmxCallback(void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data, in_addr_t remoteIP));
 void setArtSyncCallback(void (*fptr)(in_addr_t remoteIP));
 

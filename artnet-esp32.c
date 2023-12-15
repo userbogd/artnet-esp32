@@ -26,26 +26,31 @@
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "esp_types.h"
+#include "common_types.h"
+
+#define ART_NET_DEBUG_LEVEL 0
+
 
 static const char *TAG = "artnet-esp32";
 static art_net_t ArtNetHandle;
 
-void (*artDmxCallback)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data,  in_addr_t remoteIP);
+void (*artDmxCallback)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *data, in_addr_t remoteIP);
 void (*artSyncCallback)(in_addr_t remoteIP);
 
-void setArtDmxCallback(void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data, in_addr_t remoteIP))
+void setArtDmxCallback(
+        void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t *data, in_addr_t remoteIP))
 {
-  artDmxCallback = fptr;
+    artDmxCallback = fptr;
 }
 
 void setArtSyncCallback(void (*fptr)(in_addr_t remoteIP))
 {
-  artSyncCallback = fptr;
+    artSyncCallback = fptr;
 }
 
-static uint16_t receive_handler(struct sockaddr_in *addr, uint8_t *artnetPacket, int len)
+static uint16_t receive_handler(art_net_t *art, struct sockaddr_in *addr, uint8_t *artnetPacket, int *len)
 {
-    if (len <= 0)
+    if (*len <= 0)
         return 0;
     // Check that packetID is "Art-Net" else ignore
     if (memcmp(artnetPacket, ART_NET_ID, sizeof(ART_NET_ID)) != 0)
@@ -60,18 +65,76 @@ static uint16_t receive_handler(struct sockaddr_in *addr, uint8_t *artnetPacket,
         uint16_t incomingUniverse = artnetPacket[14] | artnetPacket[15] << 8;
         uint16_t dmxDataLength = artnetPacket[17] | artnetPacket[16] << 8;
         if (artDmxCallback)
-            (*artDmxCallback)(incomingUniverse, dmxDataLength, sequence, artnetPacket + ART_DMX_START, addr->sin_addr.s_addr);
+            (*artDmxCallback)(incomingUniverse, dmxDataLength, sequence, artnetPacket + ART_DMX_START,
+                              addr->sin_addr.s_addr);
         return ART_DMX;
     }
+
     if (opcode == ART_POLL)
     {
+        uint8_t node_ip_address[4];
+        uint8_t id[8];
+        struct artnet_reply_s ArtPollReply;
 
+        UINT32_VAL ip;
+        ip.Val = art->ownip;
+        node_ip_address[0] = ip.v[0];
+        node_ip_address[1] = ip.v[1];
+        node_ip_address[2] = ip.v[2];
+        node_ip_address[3] = ip.v[3];
+
+        sprintf((char*) id, "Art-Net");
+        memcpy(ArtPollReply.id, id, sizeof(ArtPollReply.id));
+        memcpy(ArtPollReply.ip, node_ip_address, sizeof(ArtPollReply.ip));
+        ArtPollReply.opCode = ART_POLL_REPLY;
+
+        ArtPollReply.port = ART_NET_PORT;
+        memset(ArtPollReply.goodinput, 0x08, 4);
+        memset(ArtPollReply.goodoutput, 0x80, 4);
+        memset(ArtPollReply.porttypes, 0xc0, 4);
+
+        uint8_t shortname[18];
+        uint8_t longname[64];
+        sprintf((char*) shortname, "T3HS_E2DMX");
+        sprintf((char*) longname, "Two DMX port controller");
+        memcpy(ArtPollReply.shortname, shortname, sizeof(shortname));
+        memcpy(ArtPollReply.longname, longname, sizeof(longname));
+
+        ArtPollReply.etsaman[0] = 0;
+        ArtPollReply.etsaman[1] = 0;
+        ArtPollReply.verH = 1;
+        ArtPollReply.ver = 0;
+        ArtPollReply.subH = 0;
+        ArtPollReply.sub = 0;
+        ArtPollReply.oemH = 0;
+        ArtPollReply.oem = 0xFF;
+        ArtPollReply.ubea = 0;
+        ArtPollReply.status = 0xd2;
+        ArtPollReply.swvideo = 0;
+        ArtPollReply.swmacro = 0;
+        ArtPollReply.swremote = 0;
+        ArtPollReply.style = 0;
+
+        ArtPollReply.numbportsH = 0;
+        ArtPollReply.numbports = 2;
+        ArtPollReply.status2 = 0x08;
+
+        ArtPollReply.bindip[0] = node_ip_address[0];
+        ArtPollReply.bindip[1] = node_ip_address[1];
+        ArtPollReply.bindip[2] = node_ip_address[2];
+        ArtPollReply.bindip[3] = node_ip_address[3];
+
+        uint8_t swin[4] = { 0x01, 0x02, 0x03, 0x04 };
+        uint8_t swout[4] = { 0x01, 0x02, 0x03, 0x04 };
+        for (uint8_t i = 0; i < 2; i++)
+        {
+            ArtPollReply.swout[i] = swout[i];
+            ArtPollReply.swin[i] = swin[i];
+        }
+        memcpy(artnetPacket, &ArtPollReply, sizeof(ArtPollReply));
+        *len = sizeof(ArtPollReply);
+        return ART_POLL;
     }
-
-
-
-
-
 
     return 0;
 }
@@ -143,7 +206,7 @@ static void art_net_slave_task(void *arg)
     art_net_t *art;
     art = (art_net_t*) arg;
 
-    art->adr.sin_addr.s_addr = htonl(INADDR_ANY);
+    art->adr.sin_addr.s_addr = htonl(IPADDR_ANY);
     art->adr.sin_family = AF_INET;
     art->adr.sin_port = htons(ART_NET_PORT);
     art->timeout.tv_sec = ART_NET_TIMEOUT;
@@ -159,7 +222,8 @@ static void art_net_slave_task(void *arg)
         }
         ESP_LOGI(TAG, "Socket created");
 
-        setsockopt(art->sock, SOL_SOCKET, SO_RCVTIMEO, &art->timeout, sizeof(art->timeout));
+        int bcast = 1;
+        setsockopt(art->sock, SOL_SOCKET, SO_BROADCAST, &bcast, sizeof bcast);
 
         int err = bind(art->sock, (struct sockaddr*) &art->adr, sizeof(art->adr));
         if (err < 0)
@@ -182,12 +246,21 @@ static void art_net_slave_task(void *arg)
             }
             else  //Data received
             {
-                receive_handler((&source_addr), art->buf, len);
-                int err = sendto(art->sock, art->buf, len, 0, (struct sockaddr*) &source_addr, sizeof(source_addr));
-                if (err < 0)
+#if ART_NET_DEBUG_LEVEL > 0
+                char ip[32];
+                inet_ntop(AF_INET, &source_addr.sin_addr, ip, sizeof(ip));
+                ESP_LOGI(TAG, "Packet length:%d", len);
+                ESP_LOGI(TAG, "Sender:%s", ip);
+                ESP_LOG_BUFFER_HEX(TAG, art->buf, 16);
+#endif
+                if (receive_handler(art, &source_addr, art->buf, &len) == ART_POLL)
                 {
-                    ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
-                    break;
+                    int err = sendto(art->sock, art->buf, len, 0, (struct sockaddr*) &source_addr, sizeof(source_addr));
+                    if (err < 0)
+                    {
+                        ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
+                        break;
+                    }
                 }
             }
         }
@@ -203,9 +276,10 @@ static void art_net_slave_task(void *arg)
     vTaskDelete(NULL);
 }
 
-esp_err_t artnet_init(artnet_mode_t mode)
+esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip)
 {
     ArtNetHandle.mode = mode;
+    ArtNetHandle.ownip = ip;
     if (mode < ARTNET_MODE_SLAVE_MONITOR)
         xTaskCreate(art_net_master_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
     else if (mode < ARTNET_MODE_DISABLED)
