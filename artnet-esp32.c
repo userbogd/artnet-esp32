@@ -89,14 +89,15 @@ static uint16_t receive_handler(art_net_t *art, struct sockaddr_in *addr, uint8_
         ArtPollReply.opCode = ART_POLL_REPLY;
 
         ArtPollReply.port = ART_NET_PORT;
-        memset(ArtPollReply.goodinput, 0x08, 4);
+        memset(ArtPollReply.goodinput, 0x00, 4);
         memset(ArtPollReply.goodoutput, 0x80, 4);
-        memset(ArtPollReply.porttypes, 0xc0, 4);
+        memset(ArtPollReply.porttypes, 0x80, 4);
 
         uint8_t shortname[18];
         uint8_t longname[64];
-        sprintf((char*) shortname, "T3HS_E2DMX");
-        sprintf((char*) longname, "Two DMX port controller");
+
+        sprintf((char*) shortname, "DMX512_OUT_PORT");
+        sprintf((char*) longname, "'T3HS-E2DMX' Two DMX512 output ports node");
         memcpy(ArtPollReply.shortname, shortname, sizeof(shortname));
         memcpy(ArtPollReply.longname, longname, sizeof(longname));
 
@@ -125,7 +126,7 @@ static uint16_t receive_handler(art_net_t *art, struct sockaddr_in *addr, uint8_
         ArtPollReply.bindip[3] = node_ip_address[3];
 
         uint8_t swin[4] = { 0x01, 0x02, 0x03, 0x04 };
-        uint8_t swout[4] = { 0x01, 0x02, 0x03, 0x04 };
+        uint8_t swout[4] = { 0x03, 0x04, 0x00, 0x00 };
         for (uint8_t i = 0; i < 2; i++)
         {
             ArtPollReply.swout[i] = swout[i];
@@ -276,10 +277,11 @@ static void art_net_slave_task(void *arg)
     vTaskDelete(NULL);
 }
 
-esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip)
+esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip, void* appconf)
 {
     ArtNetHandle.mode = mode;
     ArtNetHandle.ownip = ip;
+    ArtNetHandle.appconf = appconf;
     if (mode < ARTNET_MODE_SLAVE_MONITOR)
         xTaskCreate(art_net_master_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
     else if (mode < ARTNET_MODE_DISABLED)
