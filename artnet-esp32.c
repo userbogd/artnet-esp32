@@ -28,7 +28,7 @@
 #include "esp_types.h"
 #include "common_types.h"
 
-#define ART_NET_DEBUG_LEVEL 0
+#define ART_NET_DEBUG_LEVEL 1
 
 
 static const char *TAG = "artnet-esp32";
@@ -252,10 +252,17 @@ static void art_net_slave_task(void *arg)
                 inet_ntop(AF_INET, &source_addr.sin_addr, ip, sizeof(ip));
                 ESP_LOGI(TAG, "Packet length:%d", len);
                 ESP_LOGI(TAG, "Sender:%s", ip);
-                ESP_LOG_BUFFER_HEX(TAG, art->buf, 16);
+                ESP_LOG_BUFFER_HEX(TAG, art->buf, 64);
 #endif
                 if (receive_handler(art, &source_addr, art->buf, &len) == ART_POLL)
                 {
+#if ART_NET_DEBUG_LEVEL > 0
+                    char ip2[32];
+                    inet_ntop(AF_INET, &source_addr.sin_addr, ip2, sizeof(ip2));
+                    ESP_LOGI(TAG, "Packet length:%d", len);
+                    ESP_LOGI(TAG, "Receiver:%s", ip2);
+                    ESP_LOG_BUFFER_HEX(TAG, art->buf, 64);
+#endif
                     int err = sendto(art->sock, art->buf, len, 0, (struct sockaddr*) &source_addr, sizeof(source_addr));
                     if (err < 0)
                     {
