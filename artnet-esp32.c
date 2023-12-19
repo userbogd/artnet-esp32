@@ -289,10 +289,10 @@ esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip, void* appconf)
     ArtNetHandle.mode = mode;
     ArtNetHandle.ownip = ip;
     ArtNetHandle.appconf = appconf;
-    if (mode < ARTNET_MODE_SLAVE_MONITOR)
-        xTaskCreate(art_net_master_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
-    else if (mode < ARTNET_MODE_DISABLED)
-        xTaskCreate(art_net_slave_task, "udp_client", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
+    if (mode == ARTNET_MODE_CONTROLLER)
+        xTaskCreate(art_net_master_task, "art_contr_task", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
+    else if (mode == ARTNET_MODE_NODE)
+        xTaskCreate(art_net_slave_task, "art_node_task", 4096, (void*) &ArtNetHandle, 5, &ArtNetHandle.task);
     return ESP_OK;
 }
 
