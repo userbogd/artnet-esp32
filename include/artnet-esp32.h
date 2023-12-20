@@ -115,6 +115,14 @@ typedef struct
     void* appconf;
 } art_net_t;
 
+typedef struct
+{
+  int idx;
+  uint16_t universe;
+  uint8_t buf[512];
+  bool isFree;
+}art_net_universe_t;
+
 
 esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip, void* appconf);
 void setArtDmxCallback(void (*fptr)(uint16_t universe, uint16_t length, uint8_t sequence, uint8_t* data, in_addr_t remoteIP));
