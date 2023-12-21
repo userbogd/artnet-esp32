@@ -117,11 +117,18 @@ typedef struct
 
 typedef struct
 {
-  int idx;
+  uint16_t idx;
   uint16_t universe;
+  uint8_t isFree;
+  uint8_t  reserved[59];
+} __attribute__((packed)) art_net_data_header_t;
+
+typedef struct
+{
+  art_net_data_header_t header;
   uint8_t buf[512];
-  bool isFree;
-}art_net_universe_t;
+
+} __attribute__((packed)) art_net_universe_t;
 
 
 esp_err_t artnet_init(artnet_mode_t mode, uint32_t ip, void* appconf);
