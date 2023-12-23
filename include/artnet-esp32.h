@@ -119,7 +119,7 @@ typedef struct
 {
   uint16_t idx;
   uint16_t universe;
-  uint8_t isFree;
+  uint8_t inUse;
   uint8_t  reserved[59];
 } __attribute__((packed)) art_net_data_header_t;
 
